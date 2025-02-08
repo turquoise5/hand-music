@@ -31,7 +31,6 @@ function HandMusic() {
         const landmarks = results.multiHandLandmarks[0];
         const yCoord = landmarks[8].y; // Index finger tip
         const pitch = Math.floor(60 + yCoord * 40);
-        synth.triggerAttackRelease(`${pitch}Hz`, "8n");
       }
     });
 
@@ -49,6 +48,9 @@ function HandMusic() {
 
   const handleStart = () => {
     setTrackingStarted(true);
+    document.getElementById("title").style.display = "none";
+    document.getElementById("description1").style.display = "none";
+    document.getElementById("description2").style.display = "none";
   };
 
   return (
@@ -57,6 +59,7 @@ function HandMusic() {
         <button
           onClick={handleStart}
           className="bg-blue-500 text-white font-bold py-2 px-4 rounded mt-4"
+          id = "startButton"
         >
           Start Playing
         </button>
