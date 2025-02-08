@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/hand-music/static/css/main.82af5bda.css",
+    "main.js": "/hand-music/static/js/main.31719a49.js",
+    "index.html": "/hand-music/index.html",
+    "main.82af5bda.css.map": "/hand-music/static/css/main.82af5bda.css.map",
+    "main.31719a49.js.map": "/hand-music/static/js/main.31719a49.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.82af5bda.css",
+    "static/js/main.31719a49.js"
+  ]
+}
