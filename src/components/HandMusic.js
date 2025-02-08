@@ -7,10 +7,26 @@ function HandMusic() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [trackingStarted, setTrackingStarted] = useState(false);
+  const [instrument, setInstrument] = useState("sine");
   let volume = 50;
   let distortionAmount = 0;
   let reverbAmount = 0;
+  let tremoloAmount = 0;
   
+  // Move scales outside useEffect and make them constants
+  const SCALES = {
+    blues: [58, 60, 63, 65, 66, 67, 70, 72, 75],
+    ionian: [60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84], // C Major
+    dorian: [62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86], // D Dorian
+    phrygian: [64, 65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88], // E Phrygian
+    lydian: [65, 67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88, 89], // F Lydian
+    mixolydian: [67, 69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88, 89, 91], // G Mixolydian
+    aeolian: [69, 71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88, 89, 91, 93], // A Aeolian
+    locrian: [71, 72, 74, 76, 77, 79, 81, 83, 84, 86, 88, 89, 91, 93, 95]  // B Locrian
+  };
+
+  // Initialize mode state with SCALES.ionian
+  const [mode, setMode] = useState(SCALES.ionian);
 
   useEffect(() => {
     if (!trackingStarted || !videoRef.current) return;
@@ -25,39 +41,60 @@ function HandMusic() {
       wet: 0.5
     }).toDestination();
 
+
+    var tremolo = new Tone.Tremolo(0, 1).toDestination().start();
+    const panner = new Tone.Panner(0).toDestination();
+    
     const distortion = new Tone.Distortion({
       distortion: 0,
       oversample: "none"
     }).toDestination();
 
-    const synth = new Tone.Synth().connect(wah).connect(distortion);
+    const synth = new Tone.Synth().connect(wah).connect(distortion).connect(tremolo).connect(panner);
+    synth.oscillator.type = instrument;
     synth.volume.value = -12; // Set initial volume
+    synth.set({
+      envelope: {
+        attack: 0,   // No attack (instant sound)
+        decay: 0,  // Set the decay (optional)
+        sustain: 0.5,  // Sustain level (optional)
+        release: 0,  // Release time (optional)
+      }
+    });
 
-    // Define pentatonic scale notes
-    const pentatonicScale = [
-      "A3", "C4", "D4", "E4", "G4",
-      "A4", "C5", "D5", "E5", "G5",
-      "A5"
-    ];
+    const chordSynth = new Tone.PolySynth().toDestination();
+    chordSynth.set({
+      envelope: {
+        attack: 0,   // No attack (instant sound)
+        decay: 0,  // Set the decay (optional)
+        sustain: 0.5,  // Sustain level (optional)
+        release: 0,  // Release time (optional)
+      }
+    });
+    chordSynth.volume.value = -15;
+    synth.volume.value = -10;
 
-    let currentNote = pentatonicScale[0];
     let isPlaying = false;
-    // Define the key of C Scales in MIDI numbers
-    const C_BLUES = [58, 60, 63, 65, 66, 67, 70, 72, 75];
 
+    let globalScale;
 
-
-    let bluesScale;
     // Function to transpose to any key
-    let getTransposedScale = (rootNote) => {
-        //scale is numerical value of x axis of right hand position
-        let semitoneShift = rootNote - 60; // Root note relative to C4 (MIDI 60)
-        bluesScale = C_BLUES.map(note => note + semitoneShift);
+    let getTransposedScale = (scale, shift) => {
+        globalScale = scale.map(note => note + shift);
     };
-    let root = 60;
-    getTransposedScale(root);
-    // Example: Change key to **A Blues** (A = MIDI 57)
-    // A Blues Scale
+    
+    let shift = 0;
+    getTransposedScale(mode, shift);
+
+    function dist(x0,y0,x1,y1) {
+      return Math.sqrt(
+        Math.pow(x0 - x1, 2) +
+        Math.pow(y0 - y1, 2)
+      );
+    }
+
+    let rootIndex = null;
+    let currChord = [];
 
 
     // MediaPipe Hands setup
@@ -104,19 +141,32 @@ function HandMusic() {
         
         if (handedness === 'Left') {
           // Volume control with left hand rotation
+          // Check if second hand exists before accessing its landmarks
+          // if (results.multiHandLandmarks.length < 2) return;
+          
+          // const landmarks = results.multiHandLandmarks[1];
+          // if (!landmarks) return;
+
           const wristX = landmarks[0].x;
           const wristY = landmarks[0].y;
           const middleX = landmarks[9].x;
           const middleY = landmarks[9].y;
-          
-          
+          const pinkyDistance = getDistance(20, 0);
           // Get thumb distance for wah control
           const thumbDistance = getDistance(4, 17);
+          const mid_index_Distance = getDistance(8, 4);
+
           // Map thumb distance: 0.2 -> 0 wah, 0 -> 1 wah
           reverbAmount = Math.min(Math.max((0.2 - thumbDistance) / 0.2, 0), 1);
           wah.sensitivity = reverbAmount * 10; // Scale to reasonable sensitivity values
 
-
+          tremoloAmount = Math.floor(mid_index_Distance*20);
+          tremolo.frequency.value = tremoloAmount;
+          if (pinkyDistance < 0.20) {
+            synth.portamento = 0.07;
+          } else {
+            synth.portamento = 0;
+          }
           const mindexDistance = getDistance(12, 0);
           // Map mindexDistance: 0.3+ -> 0 distortion, 0.15 or less -> 1 distortion
           distortionAmount = Math.min(Math.max((0.3 - mindexDistance) / 0.15, 0), 1);
@@ -133,44 +183,71 @@ function HandMusic() {
           // Convert to degrees and normalize to 0-360
           let degrees = (wristAngle * 180 / Math.PI) % 360;
           
-          // Smooth out volume changes by using a smaller range and adding an offset
-          volume = Math.floor((degrees / 360) * 40); // Adjusted range and offset
-          
-          // Use a slower ramp time for smoother transitions
-          synth.volume.rampTo(volume, 0.1);
+          // Update volume variable but don't apply it directly to the synth
+          volume = Math.floor((degrees / 360) * 30 - 10);
         } else if (handedness === 'Right') {
+          // const landmarks = results.multiHandLandmarks[0];
+          const xCoord = Math.min(Math.max(landmarks[0].x, 0), 1);
+          const panValue = ((xCoord * 2) - 1) * (-1);
+          console.log("xCoord: ", xCoord);
+          console.log("panValue: ", panValue);
+          panner.pan.value = panValue;
+          // Apply the current volume only when using the right hand
+          synth.volume.rampTo(volume, 0.1);
+          
           const yCoord = landmarks[0].y; // Get the y-coordinate of the wrist
-          const xCoord = landmarks[0].x;
-          const vertIndex = 9-Math.floor(yCoord*9);
-          let note;
   
           const thumbTip = landmarks[4];
-          const indexFingerBase = landmarks[5];
           const wrist = landmarks[0];
-          const indexFingerTip = landmarks[7];
+          const indexFingerTip = landmarks[7];   // Landmark 7
           const pinkyBase = landmarks[17];
+          const middleTip = landmarks[12];
+          const ringTip = landmarks[16];
+          const pinkyTip = landmarks[20]
   
           // Calculate distances between the base, middle, and tip of the index finger
-          const distanceTipToWrist = Math.sqrt(
-            Math.pow(wrist.x - indexFingerTip.x, 2) +
-            Math.pow(wrist.y - indexFingerTip.y, 2)
-          );
-          const distanceThumbToPinkyBase = Math.sqrt(
-            Math.pow(thumbTip.x - pinkyBase.x, 2) +
-            Math.pow(thumbTip.y - pinkyBase.y, 2)
-          );
+          if (wrist.x > 0 && wrist.y > 0 && wrist.x < 1.0 && wrist.y < 1.0 ) {
+            let note;
+            let chord = [];
+            const distanceIndexTipToWrist = dist(indexFingerTip.x, indexFingerTip.y, wrist.x, wrist.y);
+            const distanceThumbToPinkyBase = dist(thumbTip.x, thumbTip.y, pinkyBase.x, pinkyBase.y);
+            const distanceMiddleTipToWrist = dist(middleTip.x, middleTip.y, wrist.x, wrist.y);
+            const distanceRingTipToWrist = dist(ringTip.x, ringTip.y, wrist.x, wrist.y);
+            
+            //melody
+            
+            if (distanceIndexTipToWrist > 0.25) {
+              const chromScale = globalScale[globalScale.length-1] - Math.floor(yCoord*12);
+              note = Tone.Frequency(chromScale, "midi").toNote();
+            } else if (distanceThumbToPinkyBase > 0.18) {
+              const vertIndex = (globalScale.length-1) - Math.floor(yCoord*9);
+              note = Tone.Frequency(globalScale[vertIndex], "midi").toNote();
+            } else {
+              synth.triggerRelease();
+            }
+            synth.triggerAttack(note);
           
-          
-          if (distanceTipToWrist > 0.26) {
-            const chromScale = 74 - Math.floor(yCoord*12);
-            note = Tone.Frequency(chromScale, "midi").toNote();
-            synth.triggerAttack(note, '0.5');
-          } else if (distanceThumbToPinkyBase > 0.17) {
-            let currentScale = bluesScale;
-            note = Tone.Frequency(currentScale[vertIndex], "midi").toNote();
-            synth.triggerAttack(note, '0.5');
-          } else {
-            synth.triggerRelease();
+  
+            //chords
+            if (distanceMiddleTipToWrist > 0.14 && distanceRingTipToWrist > 0.14) {
+              let currRootIndex = 8 - Math.floor(yCoord*8);
+              if (rootIndex == null) {
+                rootIndex = currRootIndex;
+              } else if (rootIndex != currRootIndex) {
+                rootIndex = currRootIndex;
+                chordSynth.triggerRelease(currChord);
+                for (let i = 0; i < 4; i++) {
+                  let currIndex = rootIndex + (2*i);
+                  while (currIndex > (globalScale.length-1)) {
+                    currIndex = currIndex - (globalScale.length-1);
+                  }
+                  const currNote = Tone.Frequency(globalScale[currIndex], "midi").toNote();
+                  chord.push(currNote);
+                }
+                chordSynth.triggerAttack(chord);
+                currChord = chord
+              }
+            } 
           }
         }
 
@@ -180,7 +257,7 @@ function HandMusic() {
       // If no hands are detected and notes are playing, stop them
       if (results.multiHandLandmarks.length === 0 && isPlaying) {
         synth.triggerRelease();
-        isPlaying = false;
+        chordSynth.triggerRelease(currChord);
       }
     });
 
@@ -210,7 +287,7 @@ function HandMusic() {
       }
       synth.dispose();
     };
-  }, [trackingStarted]);
+  }, [trackingStarted, mode, instrument]);
 
   // Updated function to draw landmarks with different colors
   const drawHandLandmarks = (ctx, landmarks, handedness, volume, distortionAmount, reverbAmount) => {
@@ -221,10 +298,18 @@ function HandMusic() {
     
     ctx.scale(-1, 1);
     ctx.font = "48px serif";
-    ctx.fillText(volume.toString() * 8, -60, 50);
-    ctx.fillText((distortionAmount.toString()), -60, 100);
-    ctx.fillText(reverbAmount.toString(), -60, 150);
+    if (100 - (volume.toString()) ** 2 > 0)
+    {
+      ctx.fillText(100 - (volume.toString()) ** 2, -80, 50);
+    }
+    else
+    {
+      ctx.fillText(0, -80, 50);
+    }
+    ctx.fillText((distortionAmount.toString()), -90, 100);
+    ctx.fillText(reverbAmount.toString(), -90, 150);
     ctx.scale(-1, 1);
+
     landmarks.forEach((point) => {
       const x = point.x * canvasRef.current.width;
       const y = point.y * canvasRef.current.height;
@@ -238,14 +323,12 @@ function HandMusic() {
   const handleStart = async () => {
     await Tone.start();
     setTrackingStarted(true);
-    document.body.style.background = "black";
   };
 
   return (
     <div className="min-h-screen bg-black">
       {!trackingStarted ? (
         <button
-          id="startButton"
           onClick={handleStart}
           className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded mt-4"
         >
@@ -254,26 +337,50 @@ function HandMusic() {
       ) : (
         <div className="relative w-full h-screen">
           <select>
-            <option value="Ionian">Ionian</option>
-            <option value="Dorian">Dorian</option> 
-            <option value="Phrygian">Phrygian</option>
-            <option value="Lydian">Lydian</option>
-            <option value="Mixolydian">Mixolydian</option>
-            <option value="Aeolian">Aeolian</option>
-            <option value="Locrian">Locrian</option>
-            <option value="Blues">Blues</option>
+            <option value={0}>C</option>
+            <option value={1}>Db</option>
+            <option value={2}>E</option>
+            <option value={3}>Eb</option>
+            <option value={4}>F</option>
+            <option value={5}>Gb</option>
+            <option value={6}>G</option>
+            <option value={7}>Ab</option>
+            <option value={8}>A</option>
+            <option value={9}>Bb</option>
+            <option value={10}>B</option>  
           </select>
-          <select>
-            <option value="C">C</option>
-            <option value="D">D</option>
-            <option value="E">E</option>
-            <option value="F">F</option>
-            <option value="G">G</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
+          <select onChange={(e) => setMode(SCALES[e.target.value])}>
+            <option value="ionian">Ionian</option>
+            <option value="dorian">Dorian</option>
+            <option value="phrygian">Phrygian</option>
+            <option value="lydian">Lydian</option>
+            <option value="mixolydian">Mixolydian</option>
+            <option value="aeolian">Aeolian</option>
+            <option value="locrian">Locrian</option>
+          </select>
+          <select onChange={(e) => setInstrument(e.target.value)}>
+            <option value="sine">Sine</option>
+            <option value="square">Square</option>
+            <option value="sawtooth">Sawtooth</option>
+            <option value="triangle">Triangle</option>
+            <option value="fmsine">FMSine</option>
+            <option value="fmsquare">FMSSquare</option>
+            <option value="fmsawtooth">FMSSawtooth</option>  
+            <option value="fmtriangle">FMTriangle</option>
+            <option value="amsine">AMSine</option>
+            <option value="amsquare">AMSquare</option>
+            <option value="amsawtooth">AMSawtooth</option>
+            <option value="amtriangle">AMTriangle</option>
+            <option value="fatsine">FatSine</option>
+            <option value="fatsquare">FatSquare</option>
+            <option value="fatsawtooth">FatSawtooth</option>
+            <option value="fattriangle">FatTriangle</option>
           </select>
           <video 
             ref={videoRef} 
+
+
+
             className="w-1/3 rounded-md mx-auto" 
             autoPlay 
             style={{
