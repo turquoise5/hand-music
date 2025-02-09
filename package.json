@@ -2,7 +2,6 @@
   "name": "hand-music-website",
   "version": "1.0.0",
   "private": true,
-  "homepage": "https://turqoise5.github.io/hand-music"
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
